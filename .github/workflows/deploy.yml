@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - staging
 
 jobs:
   deploy:
@@ -24,6 +25,9 @@ jobs:
 
       - name: Deploy to Render
         run: |
-          curl -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+          # Chọn service ID dựa theo nhánh
+          SERVICE_ID=$([ "${GITHUB_REF##*/}" = "main" ] && echo "${{ secrets.RENDER_SERVICE_ID_PROD }}" || echo "${{ secrets.RENDER_SERVICE_ID_STAGING }}")
+          echo "Deploying to service ID: $SERVICE_ID"
+          curl -X POST "https://api.render.com/v1/services/$SERVICE_ID/deploys" \
           -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
           -H "Accept: application/json"
