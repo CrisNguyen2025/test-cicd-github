@@ -1,64 +1,17 @@
-name: CI/CD Docker Local Blue-Green
+# Step 1: Build
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+RUN npm run build
 
-on:
-  push:
-    branches:
-      - main
-      - staging
-
-jobs:
-  build-test-deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      # 1. Checkout code
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      # 2. Build Docker image
-      - name: Build Docker image
-        run: docker build -t my-nextjs-app:${{ github.sha }} .
-
-      # 3. Run tests inside Docker container
-      - name: Run tests in Docker
-        run: docker run --rm my-nextjs-app:${{ github.sha }} npm run test --if-present
-
-      # 4. Deploy to local server via SSH (Blue-Green)
-      - name: Deploy Blue-Green to local
-        uses: appleboy/ssh-action@v0.1.7
-        with:
-          host: ${{ secrets.LOCAL_HOST }}
-          username: ${{ secrets.LOCAL_USER }}
-          key: ${{ secrets.LOCAL_SSH_KEY }}
-          script: |
-            echo "Determine blue-green strategy..."
-            if docker ps -a --format '{{.Names}}' | grep -q '^nextjs_blue$'; then
-              ACTIVE_CONTAINER="nextjs_blue"
-              INACTIVE_CONTAINER="nextjs_green"
-            else
-              ACTIVE_CONTAINER="nextjs_green"
-              INACTIVE_CONTAINER="nextjs_blue"
-            fi
-            echo "Active container: $ACTIVE_CONTAINER"
-            echo "Inactive container: $INACTIVE_CONTAINER"
-
-            echo "Stopping old inactive container if exists..."
-            docker stop $INACTIVE_CONTAINER || true
-            docker rm $INACTIVE_CONTAINER || true
-
-            echo "Running new container on temp port..."
-            docker run -d -p 3001:3000 --name $INACTIVE_CONTAINER my-nextjs-app:${GITHUB_SHA}
-
-            echo "Testing new container..."
-            sleep 5
-            curl -f http://localhost:3001/ || { echo "New container failed!"; exit 1; }
-
-            echo "Switch traffic..."
-            # Swap ports using Docker network or simple rename
-            # For local single-host, we can just stop old active and restart new on port 3000
-            docker stop $ACTIVE_CONTAINER || true
-            docker rm $ACTIVE_CONTAINER || true
-            docker rename $INACTIVE_CONTAINER nextjs_active
-            docker run -d -p 3000:3000 --name nextjs_active my-nextjs-app:${GITHUB_SHA}
-
-            echo "Deployment finished!"
+# Step 2: Production image
+FROM node:20-alpine
+WORKDIR /app
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package*.json ./
+RUN npm install --production
+EXPOSE 3000
+CMD ["npm", "start"]
