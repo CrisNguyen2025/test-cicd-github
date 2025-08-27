@@ -46,21 +46,18 @@ jobs:
             docker stop $INACTIVE_CONTAINER || true
             docker rm $INACTIVE_CONTAINER || true
 
-            echo "Running new container on temp port 3001..."
+            echo "Running new container on temp port..."
             docker run -d -p 3001:3000 --name $INACTIVE_CONTAINER my-nextjs-app:${GITHUB_SHA}
 
             echo "Testing new container..."
             sleep 5
             curl -f http://localhost:3001/ || { echo "New container failed!"; exit 1; }
 
-            echo "Switching traffic to new container..."
-            # Stop old active container on port 3000
+            echo "Switch traffic..."
+            # Swap ports using Docker network or simple rename
+            # For local single-host, we can just stop old active and restart new on port 3000
             docker stop $ACTIVE_CONTAINER || true
             docker rm $ACTIVE_CONTAINER || true
-
-            # Map inactive container to port 3000
-            docker stop $INACTIVE_CONTAINER || true
-            docker rm nextjs_active || true
             docker rename $INACTIVE_CONTAINER nextjs_active
             docker run -d -p 3000:3000 --name nextjs_active my-nextjs-app:${GITHUB_SHA}
 
